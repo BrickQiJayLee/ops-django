@@ -35,7 +35,7 @@ def exector_create(request):
     _history_id = get_history_id(script_job_name)
     return HttpResponse(json.dumps({"result": "success", "data": {"history_id": _history_id}}))
 
-def tz_scrpits(kwargs):
+def exec_scripts(kwargs):
     '''
     执行脚本统一入口
     :return:
@@ -44,26 +44,26 @@ def tz_scrpits(kwargs):
     script_name = kwargs.get("script_name", None)
     history_id = kwargs.get("history_id", None)
     if history_id is None:
-        return {'result': 'failed', 'info': '创建任务失败'}
+        return {'result': 'failed', 'info': u'请先创建任务'}
     if script_name is None:
         job_name = kwargs.get("script_job_name", None)
         script_name = get_script_name(job_name)
     else:
         job_name = get_job_name(script_name)
     if script_name is None and job_name is None:
-        _logger.error('%s script %s"' % (script_name, "传入名称参数错误"))
+        _logger.error('%s script %s"' % (script_name, u"传入名称参数错误"))
     script_args = kwargs.get("script_args", '')
     module_args = kwargs.get("module_args", None)   #模块参数 例: "-s vms_test -m env1" 根据参数获取对应ip地址
     specific_ip = kwargs.get("specific_ip", [])   #指定ip地址
     is_root = kwargs.get("is_root", 0)   #指定ip地址
     if script_name is None:
-        _logger.error('%s script %s"' % (script_name, "未指定作业"))
-        return {'result': 'failed', 'info':'未指定作业'}
+        _logger.error('%s script %s"' % (script_name, u"未指定作业"))
+        return {'result': 'failed', 'info':u'未指定作业'}
     if module_args is not None and module_args != '':
         ips = get_ips_by_set_module(module_args)
         ips = ips + specific_ip
     else:
-        return {'result': 'failed', 'info':'未指定ip'}
+        return {'result': 'failed', 'info':u'未指定ip'}
     if args_type == 'normal':
         script_args_req = script_args
     elif args_type == 'file':
@@ -71,7 +71,7 @@ def tz_scrpits(kwargs):
         script_args_req = ["%s %s" % (i['ip'], i['params']) for i in script_args_req]
         script_args_req = '\n'.join(script_args_req)
     else:
-        return {'result': 'failed', 'info': '参数错误'}
+        return {'result': 'failed', 'info': u'参数错误'}
     if is_root == '1':
         ansible_interface = ansible_api.AnsiInterface(become=True, become_method='sudo', become_user='root', history_id=history_id)
         ansible_interface.exec_script_all_type(ips, script_name, script_args=script_args_req, args_type=args_type)
@@ -98,7 +98,6 @@ def get_args(request):
         args_type = request.POST.get("args_type")
         module_args = request.POST.get("module_args")
         script_args = request.POST.get("script_args")
-        print
         if args_type == 'normal':
             ips, args = get_ips_by_set_module(module_args, normal_params=script_args)
         elif args_type == 'file':
@@ -111,9 +110,7 @@ def get_args(request):
         return HttpResponse(json.dumps({"result": "failed", "info": "获取参数有误"}))
 
 @csrf_exempt
-def tz_scrpits_http(request):
+def scrpits_http(request):
     kwargs = json.loads(request.POST.get("kwargs", None))
-    #script_job_name = get_job_name(kwargs.get('script_name'))
-    #kwargs['history_id'] = get_history_id(script_job_name)
-    ret = tz_scrpits(kwargs)
+    ret = exec_scripts(kwargs)
     return HttpResponse(json.dumps(ret))

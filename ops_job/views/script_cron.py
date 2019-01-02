@@ -2,7 +2,7 @@
 from __future__ import unicode_literals
 from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
-import json, os, time
+import json, time
 import traceback
 from djcelery.models import PeriodicTask, CrontabSchedule
 #from django.db import transaction
@@ -79,7 +79,7 @@ def commitcron(request):
         task.name = periodic_task_name  # name
         task.crontab = crontab  # 设置crontab
         task.enabled = enabled  # enabled
-        task.task = "ops_job.tasks.tz_scrpits"  # tasks
+        task.task = "ops_job.tasks.celery_scripts"  # tasks
         kwargs = {
                 "script_name": get_script_name(request.POST.get('script_job_name', '')),
                 "args_type": request.POST.get('args_type', '1'),
@@ -120,7 +120,11 @@ def enablecron(request):
         if not job_name:
             return HttpResponse(json.dumps({"result": "failed", "info": "未获取到job name"}))
         else:
-            PeriodicTask.objects.filter(name=job_name).update(enabled=True if enabled == 'true' else False)
+            periodic_task, created = PeriodicTask.objects.get_or_create(name=job_name)
+            if created == True:
+                return HttpResponse(json.dumps({"result": "failed", "info": "提交失败！任务不存在"}))
+            periodic_task.enabled = True if enabled == 'true' else False
+            periodic_task.save()
             if enabled == 'true':
                 ret_info = "启用成功!"
             else:
