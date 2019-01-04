@@ -1,11 +1,16 @@
 from django.conf.urls import url
-from cmdb.views import cmdb_pool, tree, user_auth
+from cmdb.views import cmdb_pool, product_info, tree, user_auth
 
 urlpatterns = [
     # CMDB pool
     url(r'^/cmdb_pool/cmdb_pool', cmdb_pool.cmdb_pool, name="cmdb-pool"),
     url(r'^/cmdb_pool/cmdb_update', cmdb_pool.cmdb_update, name="cmdb-pool-update"),
     url(r'^/cmdb_pool/cmdb_delete', cmdb_pool.cmdb_delete, name="cmdb-pool-delete"),
+
+    # CMDB product info
+    url(r'^/product_info/product_list', product_info.product_list, name="cmdb-product-list"),
+    url(r'^/product_info/commit_product', product_info.commit_product, name="cmdb-product-commit-product"),
+    url(r'^/product_info/delete_product', product_info.delete_product, name="cmdb-product-delete-product"),
 
     # CMDB tree info
     url(r'^/tree/tree_info', tree.tree_info, name="cmdb-tree-info"),

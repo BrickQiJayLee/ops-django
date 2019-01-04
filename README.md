@@ -1,3 +1,5 @@
+> 请结合ops-vue使用
+
 # 部署
 1.安装依赖包:  
 ----requirement.txt
@@ -27,6 +29,11 @@
 >2). 启动celery调度: python manage.py celery beat  
 >3). 启动celery任务worker: python manage.py celery worker --loglevel=info
 
+##4. Docker部署
+
+``` bash
+sh build_and_run.sh
+```
 
 启动命令：docker run -d --network ops_web --name ops_django_web -p 9001:8000 -p 50052:50052 ops_django_web
 ####注: 整套服务需要跑至少3个进程 django server进程, 任务调度进程, 任务调度worker进程(可多开)

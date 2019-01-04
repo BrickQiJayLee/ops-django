@@ -4,7 +4,6 @@
 
 from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.contrib.auth.decorators import login_required
 from classes import ansible_api, my_concurrent, crypto, mysql_db, config
 import logging
 import traceback
@@ -12,7 +11,6 @@ from db_job.models import DbJobDbInstance, DbJobDbBackupHistory
 import json
 from ops_django.settings import RUN_MODE
 import time
-import re
 from operator import itemgetter
 
 _logger = logging.getLogger(__name__)

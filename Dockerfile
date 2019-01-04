@@ -5,6 +5,9 @@ FROM python:2.7
 RUN cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && echo 'Asia/Shanghai' >/etc/timezone
 
 # install mysql-client
+RUN echo "deb http://ftp.cn.debian.org/debian/ stretch main" > /etc/apt/sources.list
+RUN echo "deb http://ftp.cn.debian.org/debian/ stretch-updates main" >> /etc/apt/sources.list
+RUN echo "deb http://ftp.cn.debian.org/debian-security stretch/updates main" >> /etc/apt/sources.list
 RUN apt-get update
 RUN apt-get install -y mysql-client
 RUN apt-get install -y openssh-server

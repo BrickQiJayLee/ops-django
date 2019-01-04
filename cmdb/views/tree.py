@@ -11,6 +11,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.db.models import Q
+from cmdb.views.product_info import get_product_name_byid, get_product_id
 from cmdb.models import CmdbPool, CmdbTreeNode, CmdbProductInfo, CmdbAnsibleSshInfo
 import json,time,datetime
 from classes import crypto, get_ip_show_type
@@ -96,12 +97,7 @@ def resource_total(request):
                          u"status": i['status'], u"region":i['region']} for i in cmdb_info ]
     return render_to_response("resource/total.html", {"page":"page1", "table_data": json.dumps(cmdb_info_table)})
 
-def get_product_name_byid(ProductId):
-    cmdb_product_info = CmdbProductInfo.objects.filter(product_id=ProductId).first()
-    if cmdb_product_info:
-        return cmdb_product_info.product_name
-    else:
-        return '未指定业务'
+
 
 #@login_required
 @csrf_exempt
@@ -254,11 +250,12 @@ def get_unused_ip_from_cmdb_pool(request):
 @csrf_exempt
 def get_prod_list(request):
     '''
-    拉取所有prod信息
+    拉取所有product信息
     :return:
     '''
     cmdb_product_info = CmdbProductInfo.objects.all().values()
-    return HttpResponse(json.dumps({"result": "success", "data": [ {'value':i['product_id'], 'lable': i['product_name']} for i in cmdb_product_info ]}))
+    print [ {'value':i['product_id'], 'lable': i['product_name']} for i in cmdb_product_info ]
+    return HttpResponse(json.dumps({"result": "success", "data": [ {'value':i['product_id'], 'label': i['product_name']} for i in cmdb_product_info ]}))
 
 
 
@@ -318,8 +315,9 @@ def create_node(request):
         ip = request.POST.get('node_name').strip()
         if not check_ip_exist(ip):
             return HttpResponse(json.dumps({"result": "failed","info":"创建的ip不存在资源库中，请先加入资源库"}))
-    request.POST.get("product_id", "-1")
-    CmdbTreeNode.objects.create(product_id=request.POST.get("product_id", "-1"),node_name=request.POST.get("node_name", "-1"),
+    product_id = int(request.POST.get("product_id", "-1"))
+    print product_id
+    CmdbTreeNode.objects.create(product_id=product_id, node_name=request.POST.get("node_name", "-1"),
                             environment=request.POST.get("environment", "-1"),depth=request.POST.get("depth"),
                             father_id=request.POST.get('father_id'),node_type=request.POST.get("node_type"))
     created_id = CmdbTreeNode.objects.latest('id').id
