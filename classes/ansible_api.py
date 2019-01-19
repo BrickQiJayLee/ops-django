@@ -443,7 +443,3 @@ class AnsiInterface(AnsibleApi):
             self.run(host_list, 'shell', 'cd %s && ./%s %s' % (AnsibleTmpPath, TmpFileName, script_args))
             result = self._get_result()
         return result
-
-if __name__ == "__main__":
-    interface = AnsiInterface()
-    print "shell: ", interface.exec_script_all_type(['39.107.35.128'], 'new_script_1543900022000.sh')
