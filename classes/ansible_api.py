@@ -2,21 +2,12 @@
 #!/usr/bin/env python
 from collections import namedtuple
 from ansible.parsing.dataloader import DataLoader
-try:  #ansible < 2.4
-    ANSIBLE_VERSION = "2.2"
-    from ansible.vars import VariableManager
-    from ansible.inventory import Inventory
-except:  #ansible > 2.4
-    ANSIBLE_VERSION = "2.4"
-    from ansible.Inventory import Inventory
-    from ansible.vars.manager import VariableManager
-    from ansible.inventory.manager import InventoryManager
+from ansible.vars.manager import VariableManager
+from ansible.inventory.manager import InventoryManager
 from ansible.executor.task_queue_manager import TaskQueueManager
 from ansible.executor.playbook_executor import PlaybookExecutor
 from ansible.plugins.callback import CallbackBase
 from ansible.errors import AnsibleError
-from ansible.inventory.group import Group
-from ansible.inventory.host import Host
 from ansible.playbook.play import Play
 import traceback
 import mysql_db, get_ip_show_type, config, crypto
@@ -28,6 +19,11 @@ _logger = logging.getLogger(__name__)
 
 from ops_django.settings import RUN_MODE
 
+
+
+"""
+ 2019-01-25 更新: 废弃ansible 2.2
+"""
 
 
 class ResultCallback(CallbackBase):
@@ -52,7 +48,7 @@ class ResultCallback(CallbackBase):
     def update_result(self):
         c = config.config('mysql.ini')
         db_name = c.getOption(RUN_MODE, 'dbname')
-        with mysql_db.conn_dbpool(db_name, RUN_MODE) if RUN_MODE == 'DEPLOY' else mysql_db.conn_dbpool(db_name,
+        with mysql_db.conn_db(db_name, RUN_MODE) if RUN_MODE == 'DEPLOY' else mysql_db.conn_db(db_name,
                                                                                                        "LOCAL") as _db:
             data = [(
                 json.dumps(self.ret),
@@ -102,7 +98,7 @@ def AnsibleTempSource():
     c = config.config('mysql.ini')
     db_name = c.getOption(RUN_MODE, 'dbname')
     ip_show_type = get_ip_show_type.get_show_type()
-    with mysql_db.conn_dbpool(db_name, RUN_MODE) if RUN_MODE == 'DEPLOY' else mysql_db.conn_dbpool(db_name, "LOCAL") as _db:
+    with mysql_db.conn_db(db_name, RUN_MODE) if RUN_MODE == 'DEPLOY' else mysql_db.conn_db(db_name, "LOCAL") as _db:
         ssh_info = _db.select("select * from cmdb_ansible_ssh_info;")
         ips = [i['outer_addr_ip' if ip_show_type == 'outer_ip' else 'inner_addr_ip'] for i in ssh_info]
         # 查询没有记录ansible信息的主机，使用默认配置
@@ -133,75 +129,48 @@ def AnsibleTempSource():
             raise AnsibleError
     return resource
 
-class MyInventory(Inventory):
-    """
-    this is my ansible inventory object.
-    """
-    def __init__(self, loader, variable_manager):
+
+class AnsibleTempFile():
+    def __init__(self):
+        '''
+        数据库获取ansible变量到临时文件
+        :return:
+        '''
+        c = config.config('mysql.ini')
+        db_name = c.getOption(RUN_MODE, 'dbname')
+        ip_show_type = get_ip_show_type.get_show_type()
+        with mysql_db.conn_db(db_name, RUN_MODE) if RUN_MODE == 'DEPLOY' else mysql_db.conn_db(db_name, "LOCAL") as _db:
+            ssh_info = _db.select("select * from cmdb_ansible_ssh_info;")
+        inv_list = list()
+        for i in ssh_info:
+            str = i['outer_addr_ip'] if ip_show_type == 'outer_ip' else i['inner_addr_ip']
+            str = "%s ansible_ssh_user=%s" % (str, i['ansible_ssh_user'] if i['ansible_ssh_user']!='' else 'root')
+            str = "%s%s" % (str, " ansible_ssh_port=%s" % i['ansible_ssh_port'] if i['ansible_ssh_port']!='' else '')
+            str = "%s%s" % (str, " ansible_sudo_pass=%s" % i['ansible_sudo_pass'] if i['ansible_sudo_pass']!='' else '')
+            if ip_show_type == 'outer_ip':
+                str = "%s%s" % (str, " private_ip=%s" % i['inner_addr_ip'] if i['inner_addr_ip'] != '' else '')
+            else:
+                str = "%s%s" % (str, " public_ip=%s" % i['outer_addr_ip'] if i['outer_addr_ip'] != '' else '')
+            inv_list.append(str)
+        inv = '[AllResource]'
+        inv = "%s\n%s" % (inv, '\n'.join(inv_list))
+        self.temp = tempfile.mktemp()
+        with open(self.temp,"wb") as f:
+            f.write(inv)
+
+    def get_tmp_file(self):
         """
-        resource的数据格式是一个列表字典，比如
-            {
-                "group1": {
-                    "hosts": [{"hostname": "10.0.0.0", "port": "22", "username": "test", "password": "pass"}, ...],
-                    "vars": {"var1": value1, "var2": value2, ...}
-                }
-            }
-
-        如果你只传入1个列表，这默认该列表内的所有主机属于my_group组,比如
-            [{"hostname": "10.0.0.0", "port": "22", "username": "test", "password": "pass"}, ...]
+        获得临时文件
+        :return:
         """
+        return self.temp
 
-        self.resource = AnsibleTempSource()
-        self.inventory = Inventory(loader=loader, variable_manager=variable_manager, host_list=[])
-        self.gen_inventory()
-
-    def my_add_group(self, hosts, groupname, groupvars=None):
+    def remove_tmp_file(self):
         """
-        add hosts to a group
+        删除临时文件
+        :return:
         """
-        my_group = Group(name=groupname)
-
-        # if group variables exists, add them to group
-        if groupvars:
-            for key, value in groupvars.iteritems():
-                my_group.set_variable(key, value)
-
-                # add hosts to group
-        for host in hosts:
-            # set connection variables
-            hostname = host.get("hostname", '')
-            hostip = host.get('ip', hostname)
-            hostport = host.get("port", 22)
-            username = host.get("username", 'root')
-            password = host.get("password", '')
-            my_host = Host(name=hostname, port=hostport)
-            if hostip not in ['', None]:
-                my_host.set_variable('ansible_ssh_ip', hostip)
-            if hostport not in ['', None]:
-                my_host.set_variable('ansible_ssh_port', hostport)
-            if username not in ['', None]:
-                my_host.set_variable('ansible_ssh_user', username)
-            if password not in ['', None]:
-                my_host.set_variable('ansible_sudo_pass', password)
-
-            # set other variables
-            for key, value in host.iteritems():
-                if key not in ["hostname", "port", "username", "password"]:
-                    my_host.set_variable(key, value)
-                    # add to group
-            my_group.add_host(my_host)
-
-        self.inventory.add_group(my_group)
-
-    def gen_inventory(self):
-        """
-        add hosts to inventory.
-        """
-        if isinstance(self.resource, list):
-            self.my_add_group(self.resource, 'default_group')
-        elif isinstance(self.resource, dict):
-            for groupname, hosts_and_vars in self.resource.iteritems():
-                self.my_add_group(hosts_and_vars.get("hosts"), groupname, hosts_and_vars.get("vars"))
+        os.remove(self.temp)
 
 
 class AnsibleApi(object):
@@ -240,7 +209,9 @@ class AnsibleApi(object):
                                listtasks=False, listtags=False, syntax=False)
         self.variable_manager = VariableManager()
         self.passwords = dict(vault_pass='secret')
-        self.inventory = MyInventory(self.loader, self.variable_manager).inventory
+        self.tmp_file_handler = AnsibleTempFile()
+        self.tmp_source = self.tmp_file_handler.get_tmp_file()
+        self.inventory = InventoryManager(loader=self.loader, sources=self.tmp_source)
         self.variable_manager.set_inventory(self.inventory)
 
     def run(self, host_list, module_name, module_args):
@@ -373,7 +344,7 @@ class AnsiInterface(AnsibleApi):
             '''
             c = config.config('mysql.ini')
             db_name = c.getOption(RUN_MODE, 'dbname')
-            with mysql_db.conn_dbpool(db_name, RUN_MODE) if RUN_MODE == 'DEPLOY' else mysql_db.conn_dbpool(db_name,
+            with mysql_db.conn_db(db_name, RUN_MODE) if RUN_MODE == 'DEPLOY' else mysql_db.conn_db(db_name,
                                                                                                            "LOCAL") as _db:
                 script = _db.select("select * from ops_job_job_script_info where script_name='%s';" % script_name)
             if not len(script) == 1:
@@ -424,6 +395,7 @@ class AnsiInterface(AnsibleApi):
         """
         在远程主机执行shell命令或者.sh脚本
         """
+        print host_list
         TmpFileName = "%s" % int(time.time())
         AnsibleTmpPath = "/data/.ansible_script_tmp/"
         if args_type == 'file':
@@ -442,4 +414,9 @@ class AnsiInterface(AnsibleApi):
             self.run(host_list, 'shell', 'chmod 0755 %s%s' % (AnsibleTmpPath, TmpFileName))
             self.run(host_list, 'shell', 'cd %s && ./%s %s' % (AnsibleTmpPath, TmpFileName, script_args))
             result = self._get_result()
+        print result
         return result
+
+if __name__ == "__main__":
+    interface = AnsiInterface()
+    print "shell: ", interface.exec_script_all_type(['39.107.35.128'], 'new_script_1543900022000.sh')
