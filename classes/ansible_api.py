@@ -110,7 +110,7 @@ def AnsibleTempSource():
     for i in ssh_info:
         try:
             resource.append({
-                "hostname": i['outer_addr_ip'],
+                "hostname": i['outer_addr_ip'] if ip_show_type == 'outer_ip' else i['inner_addr_ip'],
                 "port": 22 if not i['ansible_ssh_port'] else int(i['ansible_ssh_port']),
                 "username": "root" if not i['ansible_ssh_user'] else i['ansible_ssh_user'],
                 "password": crypto.passwd_deaes(i['ansible_sudo_pass']),
@@ -144,19 +144,16 @@ class AnsibleTempFile():
         inv_list = list()
         for i in ssh_info:
             str = i['outer_addr_ip'] if ip_show_type == 'outer_ip' else i['inner_addr_ip']
-            str = "%s ansible_ssh_user=%s" % (str, i['ansible_ssh_user'] if i['ansible_ssh_user']!='' else 'root')
-            str = "%s%s" % (str, " ansible_ssh_port=%s" % i['ansible_ssh_port'] if i['ansible_ssh_port']!='' else '')
-            str = "%s%s" % (str, " ansible_sudo_pass=%s" % i['ansible_sudo_pass'] if i['ansible_sudo_pass']!='' else '')
-            if ip_show_type == 'outer_ip':
-                str = "%s%s" % (str, " private_ip=%s" % i['inner_addr_ip'] if i['inner_addr_ip'] != '' else '')
-            else:
-                str = "%s%s" % (str, " public_ip=%s" % i['outer_addr_ip'] if i['outer_addr_ip'] != '' else '')
+            str = "%s ansible_ssh_user=%s" % (str, i['ansible_ssh_user'] if i['ansible_ssh_user'] != '' else 'root')
+            str = "%s%s" % (str, " ansible_ssh_port={0}".format(i['ansible_ssh_port']) if i['ansible_ssh_port'] != '' else '')
+            str = "%s%s" % (str, " ansible_sudo_pass={0}".format(crypto.passwd_deaes(i['ansible_sudo_pass'])) if i['ansible_sudo_pass'] != '' else '')
             inv_list.append(str)
         inv = '[AllResource]'
         inv = "%s\n%s" % (inv, '\n'.join(inv_list))
         self.temp = tempfile.mktemp()
-        with open(self.temp,"wb") as f:
+        with open(self.temp, "wb") as f:
             f.write(inv)
+            f.close()
 
     def get_tmp_file(self):
         """
@@ -170,7 +167,10 @@ class AnsibleTempFile():
         删除临时文件
         :return:
         """
-        os.remove(self.temp)
+        try:
+            os.remove(self.temp)
+        except:
+            pass
 
 
 class AnsibleApi(object):
@@ -184,35 +184,27 @@ class AnsibleApi(object):
         self.loader = None
         self.options = None
         self.passwords = None
-        self.callback = None
         self.history_id = history_id
+        self.callback = ResultCallback(history_id=self.history_id)
         self.__initializeData()
-        self.results_raw = {}
 
     def __initializeData(self):
         '''
         创建参数，为保证每个参数都被设置，ansible使用可命名元组
         '''
-        Options = namedtuple('Options', ['connection', 'module_path', 'forks', 'timeout',
-                                         'ask_pass', 'ssh_common_args',
-                                         'ssh_extra_args', 'sftp_extra_args', 'scp_extra_args', 'become', 'become_method',
-                                         'become_user', 'ask_value_pass', 'verbosity', 'check', 'listhosts',
-                                         'listtasks', 'listtags', 'syntax'])
         '''初始化loader类'''
         self.loader = DataLoader()  # 用于读取与解析yaml和json文件
         self.passwords = dict(vault_pass='secret')
+        self.Options = namedtuple('Options',
+                                  ['connection', 'module_path', 'forks', 'become', 'become_method', 'become_user',
+                                   'check', 'diff'])
+        self.options = self.Options(connection='ssh', module_path='/to/mymodules', forks=30, become=self.become,
+                                    become_method=self.become_method, become_user=self.become_user, check=False, diff=False)
 
-        self.options = Options(connection='ssh', module_path='/to/mymodules', forks=100, timeout=10,
-                               ask_pass=False, ssh_common_args='',
-                               ssh_extra_args='', sftp_extra_args='', scp_extra_args='', become=self.become, become_method=self.become_method,
-                               become_user=self.become_user, ask_value_pass=False, verbosity=None, check=False, listhosts=False,
-                               listtasks=False, listtags=False, syntax=False)
-        self.variable_manager = VariableManager()
-        self.passwords = dict(vault_pass='secret')
         self.tmp_file_handler = AnsibleTempFile()
         self.tmp_source = self.tmp_file_handler.get_tmp_file()
         self.inventory = InventoryManager(loader=self.loader, sources=self.tmp_source)
-        self.variable_manager.set_inventory(self.inventory)
+        self.variable_manager = VariableManager(loader=self.loader, inventory=self.inventory)
 
     def run(self, host_list, module_name, module_args):
         """
@@ -222,6 +214,7 @@ class AnsibleApi(object):
         """
         # create play with tasks
         try:
+            '''run after _init_task'''
             play_source = dict(
                 name="Ansible Play",
                 hosts=host_list,
@@ -229,10 +222,7 @@ class AnsibleApi(object):
                 tasks=[dict(action=dict(module=module_name, args=module_args))]
             )
             play = Play().load(play_source, variable_manager=self.variable_manager, loader=self.loader)
-
-            # actually run it
             tqm = None
-            self.callback = ResultCallback(history_id=self.history_id)
             try:
                 tqm = TaskQueueManager(
                     inventory=self.inventory,
@@ -240,15 +230,23 @@ class AnsibleApi(object):
                     loader=self.loader,
                     options=self.options,
                     passwords=self.passwords,
+                    stdout_callback=self.callback
+                    # Use our custom callback instead of the ``default`` callback plugin, which prints to stdout
                 )
                 tqm._stdout_callback = self.callback
                 tqm.run(play)
+            except Exception, e:
+                print traceback.format_exc()
+                _logger.error("ansible error: %s, %s " % (e, traceback.format_exc()))
             finally:
+                # Remove ansible tmp file
+                self.tmp_file_handler.remove_tmp_file()
                 if tqm is not None:
                     tqm.cleanup()
-        except Exception:
+        except(Exception):
             print traceback.format_exc()
-            raise AnsibleError
+            print self.callback
+            #raise AnsibleError
 
     def run_playbook(self, host_list, role_name, role_uuid, temp_param):
         """
@@ -354,7 +352,7 @@ class AnsiInterface(AnsibleApi):
                 self.script_content = script[0]['script_content']
             self.temp = tempfile.mktemp()
             with open(self.temp, "wb") as f:
-                f.write(self.script_content)
+                f.write(self.script_content.encode('UTF-8'))
 
         def get_tmp_file(self):
             return self.temp
@@ -376,7 +374,7 @@ class AnsiInterface(AnsibleApi):
             '''
             self.temp = tempfile.mktemp()
             with open(self.temp, "wb") as f:
-                f.write(content)
+                f.write(content.encode('UTF-8'))
 
         def get_tmp_file(self):
             return self.temp
@@ -395,7 +393,6 @@ class AnsiInterface(AnsibleApi):
         """
         在远程主机执行shell命令或者.sh脚本
         """
-        print host_list
         TmpFileName = "%s" % int(time.time())
         AnsibleTmpPath = "/data/.ansible_script_tmp/"
         if args_type == 'file':
