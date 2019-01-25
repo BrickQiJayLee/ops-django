@@ -416,7 +416,3 @@ class AnsiInterface(AnsibleApi):
             result = self._get_result()
         print result
         return result
-
-if __name__ == "__main__":
-    interface = AnsiInterface()
-    print "shell: ", interface.exec_script_all_type(['39.107.35.128'], 'new_script_1543900022000.sh')
