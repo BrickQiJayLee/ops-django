@@ -10,7 +10,7 @@ from django.shortcuts import render_to_response
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, F
 from cmdb.views.product_info import get_product_name_byid, get_product_id
 from cmdb.models import CmdbPool, CmdbTreeNode, CmdbProductInfo, CmdbAnsibleSshInfo
 import json,time,datetime
@@ -84,6 +84,12 @@ def get_tree_options(module_args):
     :return:
     """
     opts, ags = getopt.getopt(module_args.split(), '-h-s:-m:-e')
+
+def get_prod_id_by_name(prod_name):
+    prod_info = list(CmdbProductInfo.objects.filter(product_name=prod_name).values("product_id"))
+    if len(prod_info) == 0:
+        return -1
+    return prod_info[0]['product_id']
 
 ########################################################
 
@@ -201,7 +207,7 @@ def get_node_info(request):
         if ansible_ssh_info:
             node_info['ansible_ssh_user'] = ansible_ssh_info.ansible_ssh_user
             node_info['ansible_ssh_port'] = ansible_ssh_info.ansible_ssh_port
-            node_info['ansible_sudo_pass'] = '' if ansible_ssh_info.ansible_sudo_pass == '' else crypto.passwd_aes(ansible_ssh_info.ansible_sudo_pass)
+            node_info['ansible_sudo_pass'] = '' if ansible_ssh_info.ansible_sudo_pass == '' else ansible_ssh_info.ansible_sudo_pass
         lines.append('inner_addr_ip')
         lines.append('outer_addr_ip')
         lines.append('ansible_ssh_user')
@@ -278,8 +284,8 @@ def save_node_change(request):
         updateinfo = {
             rowKey: rowValue
         }
-
         if rowKey.startswith("ansible"):
+            print rowid
             node_info = CmdbTreeNode.objects.get(id=rowid)
             if node_info is None:
                 return HttpResponse(json.dumps({"result": "failed", "info": "节点不存在"}))
@@ -291,6 +297,7 @@ def save_node_change(request):
             outer_addr_ip = IpInfo.outer_addr_ip
             CmdbAnsibleSshInfoDb, created = CmdbAnsibleSshInfo.objects.get_or_create(inner_addr_ip=inner_addr_ip, outer_addr_ip=outer_addr_ip)
             CmdbAnsibleSshInfoDb.save()
+            _logger.info(CmdbAnsibleSshInfo.objects.filter(inner_addr_ip=inner_addr_ip, outer_addr_ip=outer_addr_ip).values())
             CmdbAnsibleSshInfo.objects.filter(inner_addr_ip=inner_addr_ip, outer_addr_ip=outer_addr_ip).update(**updateinfo)
         else:
             CmdbTreeNode.objects.filter(id=rowid).update(**updateinfo)
@@ -340,22 +347,14 @@ def delete_node(request):
     return HttpResponse(json.dumps({"result": "success", "info": "删除成功"}))
 
 
-
-###############old################
-
-@csrf_exempt
-def add_resource_from_page(request):
-    kwargs = {
-        'inner_addr_ip': request.POST.get('inner_addr_ip'),
-        'outer_addr_ip': request.POST.get('outer_addr_ip'),
-        'operating_system': request.POST.get('operating_system'),
-        'status': request.POST.get('status'),
-        'region': request.POST.get('region'),
-        'create_time': str(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time()))),
-    }
-    CmdbPool.objects.create(**kwargs)
-    return HttpResponse(json.dumps({"result":"add success"}))
-
+# 递归查找所有子节点
+def traverse_node(father_id, tree_all, nodeids):
+    for i in tree_all:
+        if father_id == i['father_id']:
+            nodeids.append(i['id'])
+            traverse_node(i['id'], tree_all, nodeids)
+        else:
+            pass
 
 
 def datefield_to_str(date_data):
@@ -366,117 +365,12 @@ def datefield_to_str(date_data):
             i["update_time"] = i["update_time"].strftime("%Y-%m-%d %H:%M:%S")
     return date_data
 
-def get_production():
-    prod_info = list(CmdbProductInfo.objects.all().values())
-    prod_info = datefield_to_str(prod_info)
-    return prod_info
-
 def get_prod_name(prod_id):
     prod_info = list(CmdbProductInfo.objects.filter(product_id=prod_id).values("product_name"))
     if len(prod_info) == 0:
         return "未指定业务"
     return prod_info[0]['product_name']
 
-def get_prod_id_by_name(prod_name):
-    prod_info = list(CmdbProductInfo.objects.filter(product_name=prod_name).values("product_id"))
-    if len(prod_info) == 0:
-        return -1
-    return prod_info[0]['product_id']
-
-#递归获取所有father
-def get_all_father_node(node, tree_all):
-    for i in tree_all:
-        if node['father_id'] == i['id']:
-            node['node_name'] = "%s:%s" % (i['node_name'], node['node_name'])
-        else:
-            continue
-        if i['father_id'] == 0:
-            pass
-        else:
-            get_all_father_node(node, tree_all)
-
-def get_folder_node():
-    tree_root = list(CmdbTreeNode.objects.filter(node_type='folder').values())
-    tree_all = list(CmdbTreeNode.objects.all().values())
-    for i in tree_root:
-        get_all_father_node(i, tree_all)
-    tree_root = datefield_to_str(tree_root)
-    return tree_root
-
-def get_all_father_name(node_name):
-    '''
-    根据node name 找到所有父节点，并输出路径
-    :return:
-    '''
-    node = list(CmdbTreeNode.objects.filter(node_name=node_name).values())
-    #tree_all = list(CmdbTreeNode.objects.all().values())
-    if not len(node) == 0:
-        node = node[0]
-    else:
-        return ''
-    #all_father_node = get_all_father_node(node, tree_all)
-    return node['node_name']
-
-def get_id_by_name(name):
-    '''
-    根据节点名称获取id
-    :param name:
-    :return:
-    '''
-    try:
-        if name == 'all_set':
-            ids = [i['id'] for i in list(CmdbTreeNode.objects.filter(~Q(node_type='ip')).values())]
-        else:
-            ids = [i['id'] for i in list(CmdbTreeNode.objects.filter(~Q(node_type='ip'), node_name=name).values())]
-    except(Exception):
-        return None
-    else:
-        return ids
-
-def get_ip_by_name(name):
-    '''
-    根据节点找到ip
-    :return:
-    '''
-    node = list(CmdbTreeNode.objects.filter(node_name=name).values())
-    if len(node) == 0:
-        return None
-    else:
-        if node[0]['node_type'] == 'ip':
-            return [node[0]['node_name']]
-        else:
-            id = node[0]['id']
-            ips = get_app_ip_by_father(id)
-            return ips
-
-def get_app_ip_by_father(father_ids):
-    '''
-    根据父节点找所有ip
-    :param father_id:
-    :return:
-    '''
-    tree_all = list(CmdbTreeNode.objects.all().values())
-    all_ip = list()
-    for father_id in father_ids:
-        nodeids = list()
-        traverse_node(father_id, tree_all, nodeids)
-        all_ip += [i['node_name'] for i in list(CmdbTreeNode.objects.filter(id__in=nodeids, node_type='ip').values())]
-    return list(set(all_ip))
-
-@csrf_exempt   # 创建根节点前获取信息
-def get_info_before_create_root_node(request):
-    apps = get_production()
-    tree_father = get_folder_node()
-    return HttpResponse(json.dumps({"apps":apps, "tree_father":tree_father}))
-
-@csrf_exempt   # 创建子节点前获取信息
-def get_info_before_create_child_node(request):
-    father_id = request.POST.get('father_id', -1)
-    father_info = list(CmdbTreeNode.objects.filter(id=father_id).values())[0]
-    return HttpResponse(json.dumps({"environment": father_info['environment'], "depth": father_info['depth']+1, "father_id": father_id,
-                                    "father_node_type": father_info['node_type'], "product_id": father_info['product_id'], "father_name": father_info['node_name'],
-                                    "product_name": get_prod_name(father_info['product_id']), "node_depth": father_info['depth']
-                                    }))
 
 
 def check_ip_exist(ip):
@@ -490,68 +384,18 @@ def check_ip_exist(ip):
     else:
         return False
 
-
-
-
-
-# 递归查找所有子节点
-def traverse_node(father_id, tree_all, nodeids):
-    for i in tree_all:
-        if father_id == i['father_id']:
-            nodeids.append(i['id'])
-            traverse_node(i['id'], tree_all, nodeids)
-        else:
-            pass
-
-
-def change_node_info(request):
+def sync_node_name():
     '''
-    修改节点信息
-    :param request:
+    启动同步node name 为外网或者内网ip  由配置决定
     :return:
     '''
-    change_key = request.POST.get("change_key", None)
-    change_value = request.POST.get("change_value", None)
-    node_id = request.POST.get("node_id", None)
-
-    # 修改ansible ssh信息
-    if change_key in ['ansible_ssh_user','ansible_ssh_port','ansible_sudo_pass']:
-        try:
-            ip = list(CmdbTreeNode.objects.filter(id=node_id).values('node_name'))
-            if len(ip) == 0:
-                return json.dumps({"result": "failed", "info": "no such ip"})
-            ip = ip[0]['node_name']
-            ip_detail = list(CmdbPool.objects.filter(
-                Q(inner_addr_ip=ip)|Q(outer_addr_ip=ip))\
-                .values('inner_addr_ip', 'outer_addr_ip'))
-            if len(ip_detail) == 0:
-                return json.dumps({"result": "failed", "info": "no such ip in cmdb"})
-            inner_addr_ip = ip_detail[0]['inner_addr_ip']
-            outer_addr_ip = ip_detail[0]['outer_addr_ip']
-
-            ssh_info = list(CmdbAnsibleSshInfo.objects.filter(inner_addr_ip=inner_addr_ip,outer_addr_ip=outer_addr_ip).values())
-            update_info = {
-                "inner_addr_ip": inner_addr_ip,
-                "outer_addr_ip": outer_addr_ip,
-                change_key: change_value
-            }
-            if len(ssh_info) == 0:
-                CmdbAnsibleSshInfo.objects.create(**update_info)
-            else:
-                CmdbAnsibleSshInfo.objects.filter(inner_addr_ip=inner_addr_ip, outer_addr_ip=outer_addr_ip).update(**update_info)
-            return HttpResponse(json.dumps({"result": "success", "info": "change success"}))
-        except(Exception):
-            _logger.error("change ansible ssh info failed: %s" % traceback.format_exc())
-            return HttpResponse(json.dumps({"result": "failed", "info": "Change ansible ssh info failed"}))
+    ip_show_type = get_ip_show_type.get_show_type()
+    nodes = CmdbTreeNode.objects.filter(node_type='ip')
+    ip_show_type = 'outer_addr_ip' if ip_show_type=='outer_ip' else 'inner_addr_ip'
+    for _res in CmdbPool.objects.all().values():
+        node_f = nodes.filter(Q(node_name=_res['outer_addr_ip'])|Q(node_name=_res['inner_addr_ip']))
+        if node_f:
+            node_f.update(node_name=_res[ip_show_type])
 
 
-    # tree node 修改
-    if change_key is None or change_value is None or node_id is None:
-        return HttpResponse(json.dumps({"result": "failed", "info": "No key or value"}))
-    kwargs = {
-        change_key: change_value.replace("\n",";")
-    }
-    CmdbTreeNode.objects.filter(id=node_id).update(**kwargs)
-
-
-    return HttpResponse(json.dumps({"result": "success", "info": "change success"}))
+sync_node_name()

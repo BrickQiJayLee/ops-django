@@ -63,31 +63,31 @@ class ResultCallback(CallbackBase):
         self.host_unreachable[result._host.get_name()] = result
         if not self.history_id is None:
             self.update_result()
-        self.ret['host_unreachable'] = {result._host.name: result._result}
+        self.ret['host_unreachable'][result._host.name] = result._result
 
     def v2_runner_on_ok(self, result, *args, **kwargs):
         self.host_ok[result._host.get_name()] = result
         if not self.history_id is None:
             self.update_result()
-        self.ret['host_ok'] = {result._host.name: result._result}
+        self.ret['host_ok'][result._host.name] = result._result
 
     def v2_runner_on_failed(self, result, *args, **kwargs):
         self.host_failed[result._host.get_name()] = result
         if not self.history_id is None:
             self.update_result()
-        self.ret['host_failed'] = {result._host.name: result._result}
+        self.ret['host_failed'][result._host.name] = result._result
 
     def runner_on_skipped(self, result, *args, **kwargs):
         self.host_failed[result._host.get_name()] = result
         if not self.history_id is None:
             self.update_result()
-        self.ret['host_failed'] = {result._host.name: result._result}
+        self.ret['host_failed'][result._host.name] = result._result
 
     def runner_on_async_failed(self, result, *args, **kwargs):
         self.host_failed[result._host.get_name()] = result
         if not self.history_id is None:
             self.update_result()
-        self.ret['host_failed'] = {result._host.name: result._result}
+        self.ret['host_failed'][result._host.name] = result._result
 
 
 def AnsibleTempSource():
@@ -113,7 +113,7 @@ def AnsibleTempSource():
                 "hostname": i['outer_addr_ip'] if ip_show_type == 'outer_ip' else i['inner_addr_ip'],
                 "port": 22 if not i['ansible_ssh_port'] else int(i['ansible_ssh_port']),
                 "username": "root" if not i['ansible_ssh_user'] else i['ansible_ssh_user'],
-                "password": crypto.passwd_deaes(i['ansible_sudo_pass']),
+                "password": '' if i['ansible_sudo_pass'] == '' else crypto.passwd_deaes(i['ansible_sudo_pass']),
                 "ip": i['outer_addr_ip'] if ip_show_type == 'outer_ip' else i['inner_addr_ip'],
             })
             for ip in other_host:
@@ -335,7 +335,7 @@ class AnsiInterface(AnsibleApi):
         result = self._get_result()
         return result
 
-    class asnible_script_temp_file():
+    class ansible_script_temp_file():
         def __init__(self, script_name):
             '''
             获取脚本内容
@@ -402,7 +402,7 @@ class AnsiInterface(AnsibleApi):
                 script_args = "%s%s" % (AnsibleTmpPath, args_file_name)
                 self.run(host_list, 'copy', 'src=%s dest=%s%s owner=root group=root mode=0755' % (args_file, AnsibleTmpPath, args_file_name))
 
-        with self.asnible_script_temp_file(script_name) as script_file_handler:
+        with self.ansible_script_temp_file(script_name) as script_file_handler:
             script_file = script_file_handler.get_tmp_file()
             TmpFileName = "%s.sh" % TmpFileName
             self.run(host_list, 'file', 'path=%s state=directory mode=0777' % AnsibleTmpPath)
@@ -411,5 +411,4 @@ class AnsiInterface(AnsibleApi):
             self.run(host_list, 'shell', 'chmod 0755 %s%s' % (AnsibleTmpPath, TmpFileName))
             self.run(host_list, 'shell', 'cd %s && ./%s %s' % (AnsibleTmpPath, TmpFileName, script_args))
             result = self._get_result()
-        print result
         return result

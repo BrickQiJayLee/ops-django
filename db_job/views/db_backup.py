@@ -187,7 +187,7 @@ def db_backup_start(request):
 
         g_res = {"failed":[], "success": []}
         for _res in result:
-            __res = json.loads(_res.get())
+            __res = json.loads(_res)
             if __res['result'] == "failed":
                 g_res["failed"].append(__res['info'])
             elif __res['result'] == "success":

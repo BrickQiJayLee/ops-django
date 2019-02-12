@@ -2,9 +2,10 @@
 
 
 # python2适用
-
 import threading
 from pathos import multiprocessing
+#from multiprocessing import Pool, TimeoutError
+#import multiprocessing
 
 def div_list(ls,n):
     '''
@@ -15,7 +16,7 @@ def div_list(ls,n):
     :param n:
     :return:
     '''
-    if not isinstance(ls,list) or not isinstance(n,int):
+    if not isinstance(ls, list) or not isinstance(n, int):
         print("not list")
         raise AttributeError
     ls_len = len(ls)
@@ -53,7 +54,6 @@ class MyMultiThread():
         for t in self.runlist:
             t.join()
 
-
 # 多进程
 class MyMultiProcess():
     '''
@@ -62,14 +62,21 @@ class MyMultiProcess():
     def __init__(self, processes):
         self._pool = multiprocessing.Pool(processes=processes)
         self.result = list()
+        self.p_list = list()
 
     def multi_process_add(self, func, *args, **kwargs):
-        self.result.append(self._pool.apply_async(func, args=args, kwds=kwargs))
+        self.p_list.append(self._pool.apply_async(func, args=args, kwds=kwargs))
 
     def multi_process_wait(self):
+        '''
+        执行并且
+        等待子进程执行完成并获取结果
+        :return: 执行结果
+        '''
         self._pool.close()
         self._pool.join()
 
     def get_result(self):
+        for p in self.p_list:
+            self.result.append(p.get())
         return self.result
-

@@ -40,52 +40,55 @@ def exec_scripts(kwargs):
     执行脚本统一入口
     :return:
     '''
-    args_type = kwargs.get("args_type", None)
-    script_name = kwargs.get("script_name", None)
-    history_id = kwargs.get("history_id", None)
-    if history_id is None:
-        return {'result': 'failed', 'info': u'请先创建任务'}
-    if script_name is None:
-        job_name = kwargs.get("script_job_name", None)
-        script_name = get_script_name(job_name)
-    else:
-        job_name = get_job_name(script_name)
-    if script_name is None and job_name is None:
-        _logger.error('%s script %s"' % (script_name, u"传入名称参数错误"))
-    script_args = kwargs.get("script_args", '')
-    module_args = kwargs.get("module_args", None)   #模块参数 例: "-s vms_test -m env1" 根据参数获取对应ip地址
-    specific_ip = kwargs.get("specific_ip", [])   #指定ip地址
-    is_root = kwargs.get("is_root", 0)   #指定ip地址
-    if script_name is None:
-        _logger.error('%s script %s"' % (script_name, u"未指定作业"))
-        return {'result': 'failed', 'info':u'未指定作业'}
-    if module_args is not None and module_args != '':
-        ips = get_ips_by_set_module(module_args)
-        ips = ips + specific_ip
-    else:
-        return {'result': 'failed', 'info':u'未指定ip'}
-    if args_type == 'normal':
-        script_args_req = script_args
-    elif args_type == 'file':
-        _, script_args_req = get_ips_by_set_module(module_args, file_params=script_args)
-        script_args_req = ["%s %s" % (i['ip'], i['params']) for i in script_args_req]
-        script_args_req = '\n'.join(script_args_req)
-    else:
-        return {'result': 'failed', 'info': u'参数错误'}
-    if is_root == '1':
-        ansible_interface = ansible_api.AnsiInterface(become=True, become_method='sudo', become_user='root', history_id=history_id)
-        ansible_interface.exec_script_all_type(ips, script_name, script_args=script_args_req, args_type=args_type)
-    else:
-        ansible_interface = ansible_api.AnsiInterface(history_id=history_id)
-        ansible_interface.exec_script_all_type(ips, script_name, script_args=script_args_req, args_type=args_type)
-    result = ansible_interface._get_result()
-    _history = OpsJobScriptHistory.objects.get(id=history_id)
-    _history.result = json.dumps(result)
-    _history.ip_list = json.dumps(ips)
-    _history.exec_status = 0
-    _history.save()
-    g_res = result
-    return {"result": "success", "data": g_res}
+    try:
+        args_type = kwargs.get("args_type", None)
+        script_name = kwargs.get("script_name", None)
+        history_id = kwargs.get("history_id", None)
+        if history_id is None:
+            return {'result': 'failed', 'info': u'请先创建任务'}
+        if script_name is None:
+            job_name = kwargs.get("script_job_name", None)
+            script_name = get_script_name(job_name)
+        else:
+            job_name = get_job_name(script_name)
+        if script_name is None and job_name is None:
+            _logger.error('%s script %s"' % (script_name, u"传入名称参数错误"))
+        script_args = kwargs.get("script_args", '')
+        module_args = kwargs.get("module_args", None)   #模块参数 例: "-s vms_test -m env1" 根据参数获取对应ip地址
+        specific_ip = kwargs.get("specific_ip", [])   #指定ip地址
+        is_root = kwargs.get("is_root", 0)   #指定ip地址
+        if script_name is None:
+            _logger.error('%s script %s"' % (script_name, u"未指定作业"))
+            return {'result': 'failed', 'info':u'未指定作业'}
+        if module_args is not None and module_args != '':
+            ips = get_ips_by_set_module(module_args)
+            ips = ips + specific_ip
+        else:
+            return {'result': 'failed', 'info':u'未指定ip'}
+        if args_type == 'normal':
+            script_args_req = script_args
+        elif args_type == 'file':
+            _, script_args_req = get_ips_by_set_module(module_args, file_params=script_args)
+            script_args_req = ["%s %s" % (i['ip'], i['params']) for i in script_args_req]
+            script_args_req = '\n'.join(script_args_req)
+        else:
+            return {'result': 'failed', 'info': u'参数错误'}
+        if is_root == '1':
+            ansible_interface = ansible_api.AnsiInterface(become=True, become_method='sudo', become_user='root', history_id=history_id)
+            result = ansible_interface.exec_script_all_type(ips, script_name, script_args=script_args_req, args_type=args_type)
+        else:
+            ansible_interface = ansible_api.AnsiInterface(history_id=history_id)
+            result = ansible_interface.exec_script_all_type(ips, script_name, script_args=script_args_req, args_type=args_type)
+        #result = ansible_interface._get_result()
+        _history = OpsJobScriptHistory.objects.get(id=history_id)
+        _history.result = json.dumps(result)
+        _history.ip_list = json.dumps(ips)
+        _history.exec_status = 0
+        _history.save()
+        g_res = result
+        return {"result": "success", "data": g_res}
+    except Exception:
+        _logger.error(traceback.format_exc())
 
 @csrf_exempt
 def get_args(request):
@@ -111,6 +114,9 @@ def get_args(request):
 
 @csrf_exempt
 def scrpits_http(request):
-    kwargs = json.loads(request.POST.get("kwargs", None))
-    ret = exec_scripts(kwargs)
-    return HttpResponse(json.dumps(ret))
+    try:
+        kwargs = json.loads(request.POST.get("kwargs", None))
+        ret = exec_scripts(kwargs)
+        return HttpResponse(json.dumps(ret))
+    except Exception:
+        _logger.error(traceback.format_exc())

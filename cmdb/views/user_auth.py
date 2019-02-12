@@ -173,7 +173,7 @@ def sync_auth_keys(keys_synv_info):
         result = ansible_interface._get_result()
         if ip not in (list(set(result['host_unreachable'].keys() + result['host_ok'].keys() + result['host_failed'].keys()))):
             result['host_failed'][ip] = "sync failed, mabe password error"
-        return json.dumps(result)
+        return result
 
     except Exception:
         try:
@@ -181,11 +181,11 @@ def sync_auth_keys(keys_synv_info):
         except:
             ip = None
         _logger.error("sync failed:  %s" % traceback.format_exc())
-        return json.dumps({
+        return {
             'host_ok': '',
             'host_unreachable': '',
             'host_failed': {ip: "failed: %s" % traceback.format_exc()}
-        })
+        }
 
 
 @csrf_exempt
@@ -196,23 +196,23 @@ def sync_auth(request):
     :return:
     '''
     try:
-        keys_synv_info = get_keys_sync_info() #根据需要同步的模块去查询每个ip对应要加的key
-        #print keys_synv_info
+        keys_synv_info = get_keys_sync_info()  # 根据需要同步的模块去查询每个ip对应要加的key
+        # print keys_synv_info
         if not keys_synv_info or len(keys_synv_info) == 0:
             return HttpResponse({'result': "没有相关ip,或key获取失败，请检查日志"})
         # 定义并发runlist
 
         # 开始并发处理
         keys_sync_handler = my_concurrent.MyMultiProcess(10)
-        #sync_auth_keys(keys_synv_info)
+        # sync_auth_keys(keys_synv_info)
         for i in keys_synv_info:
             keys_sync_handler.multi_process_add(sync_auth_keys, i)
         keys_sync_handler.multi_process_wait()
         result = keys_sync_handler.get_result()
-
+        print result
         g_res = dict()
         for _res in result:
-            __res = json.loads(_res.get())
+            __res = _res
             for k,v in __res.items():
                 if not g_res.has_key(k):
                     g_res[k] = dict()
