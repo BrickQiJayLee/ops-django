@@ -13,6 +13,7 @@ import traceback
 import mysql_db, get_ip_show_type, config, crypto
 import os, json, sys, time
 import tempfile
+import random
 import logging
 
 _logger = logging.getLogger(__name__)
@@ -393,13 +394,15 @@ class AnsiInterface(AnsibleApi):
         """
         在远程主机执行shell命令或者.sh脚本
         """
-        TmpFileName = "%s" % int(time.time())
+
+        TmpFileName = "%s%s" % (int(time.time()), int(random.random()*1000))
         AnsibleTmpPath = "/data/.ansible_script_tmp/"
         if args_type == 'file':
             with self.asnible_args_temp_file(script_args) as args_file_handler:
                 args_file = args_file_handler.get_tmp_file()
                 args_file_name = TmpFileName
                 script_args = "%s%s" % (AnsibleTmpPath, args_file_name)
+                self.run(host_list, 'file', 'path=%s state=directory mode=0777' % AnsibleTmpPath)
                 self.run(host_list, 'copy', 'src=%s dest=%s%s owner=root group=root mode=0755' % (args_file, AnsibleTmpPath, args_file_name))
 
         with self.ansible_script_temp_file(script_name) as script_file_handler:

@@ -6,13 +6,13 @@ import traceback
 import logging
 from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
-#from django.contrib.auth.decorators import login_required
-#from django.db import transaction
+# from django.contrib.auth.decorators import login_required
+# from django.db import transaction
 from django.db.models import Q
 from cmdb.models import CmdbPool, CmdbTreeNode
 import json
-#from account.views.login import check_login
-from django.contrib.auth.decorators import login_required
+# from account.views.login import check_login
+# from django.contrib.auth.decorators import login_required
 
 _logger = logging.getLogger(__name__)
 

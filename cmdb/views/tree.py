@@ -10,8 +10,8 @@ from django.shortcuts import render_to_response
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.db.models import Q, F
-from cmdb.views.product_info import get_product_name_byid, get_product_id
+from django.db.models import Q
+from cmdb.views.product_info import get_product_name_byid
 from cmdb.models import CmdbPool, CmdbTreeNode, CmdbProductInfo, CmdbAnsibleSshInfo
 import json,time,datetime
 from classes import crypto, get_ip_show_type
@@ -27,47 +27,58 @@ def get_ips_by_set_module(module_args, normal_params=None, file_params=None):
     根据set和module查询ip地址
     :return:
     '''
-    opts, ags = getopt.getopt(module_args.split(), '-h-s:-m:-e')
+    opts, ags = getopt.getopt(module_args.split(), '-h-s:-m:-e:-H:')
     sets = None
     modules = None
     env = None
+    ip = None
+    _ips = []
     for _opt_name, _opt_value in opts:
         if _opt_name in ('-h'):
             return {'result': 'success',
-                'info': 'module_args:\n -s "set1,set2" \n-m "module1,module2" \n-e "环境类型：正式环境，测试环境"\n--root 强制以root身份执行\n--所有参数可使用,分隔多个参数'}
+                    'info': 'module_args:\n -s "set1,set2" \n-m "module1,module2" \n-e "环境类型：正式环境，测试环境"\n--root 强制以root身份执行\n--所有参数可使用,分隔多个参数'}
         if _opt_name in ('-s'):
             sets = _opt_value
         if _opt_name in ('-m'):
             modules = _opt_value
         if _opt_name in ('-e'):
             env = _opt_value
-
-    if sets is None:
+        if _opt_name in ('-H'):
+            ip = _opt_value
+    if sets is None and ip is None:    # 无参数
         if normal_params is None and file_params is None:
             return []
         else:
             return [], []
-    sets = sets.split(',')
-    modules_in_sets = CmdbTreeNode.objects.filter(depth=1, node_name__in=sets).values('id') if env is None else \
-      CmdbTreeNode.objects.filter(depth=1, node_name__in=sets, environment=env.split(',')).values('id')
-    sets_id = [ i['id'] for i in modules_in_sets ]
-    modules_in_sets = CmdbTreeNode.objects.filter(depth=2, father_id__in=sets_id).values('id') if modules is None else \
-      CmdbTreeNode.objects.filter(depth=2, father_id__in=sets_id, node_name__in=modules.split(',')).values('id')
-    modules_id = [ i['id'] for i in modules_in_sets ]
-    _ips = CmdbTreeNode.objects.filter(depth=3, father_id__in=modules_id).values()
+    if ip is not None:
+        _ips += list(CmdbTreeNode.objects.filter(depth=3, node_name__in=ip.split(',')).values())
+    if sets is not None:
+        sets = sets.split(',')
+        modules_in_sets = CmdbTreeNode.objects.filter(depth=1, node_name__in=sets).values('id') if env is None else \
+                        CmdbTreeNode.objects.filter(depth=1, node_name__in=sets, environment=env.split(',')).values('id')
+        sets_id = [i['id'] for i in modules_in_sets]
+        modules_in_sets = CmdbTreeNode.objects.filter(depth=2, father_id__in=sets_id).values('id') if modules is None else \
+                        CmdbTreeNode.objects.filter(depth=2, father_id__in=sets_id, node_name__in=modules.split(',')).values('id')
+        modules_id = [i['id'] for i in modules_in_sets]
+        _ips += list(CmdbTreeNode.objects.filter(depth=3, father_id__in=modules_id).values())
+
     ret = list()
     ips = list()
     if normal_params is not None:
         ips = [i['node_name'] for i in _ips]
-        ret = [{'ip':i['node_name'],'params': normal_params} for i in _ips]
+        ret = [{'ip': i['node_name'], 'params': normal_params} for i in _ips]
     if file_params is not None:
-        opts, ags = getopt.getopt(file_params.split(), '', ['service'])
+        opts, ags = getopt.getopt(file_params.split(), '', ['service', 'custom='])
         for item in _ips:
             data = ''
             for _opt_name, _opt_value in opts:
                 if _opt_name in ('--service'):
-                    print item['service_info']
-                    data = "%s%s " % (data, item['service_info'])
+                    if item['service_info']:
+                        data = "%s%s " % (data, item['service_info'])
+                    else:
+                        data = "%s%s " % (data, '')
+                if _opt_name in ('--custom'):
+                    data = "%s%s " % (data, _opt_value)
             ret.append({
                 'ip': item['node_name'],
                 'params': data
