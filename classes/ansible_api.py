@@ -410,6 +410,7 @@ class AnsiInterface(AnsibleApi):
             TmpFileName = "%s.sh" % TmpFileName
             self.run(host_list, 'file', 'path=%s state=directory mode=0777' % AnsibleTmpPath)
             self.run(host_list, 'shell', 'chmod 777 %s' % AnsibleTmpPath)
+            self.run(host_list, 'shell', 'cd /data/.ansible_script_tmp && find . -type f -exec rm {} \;')
             self.run(host_list, 'copy', 'src=%s dest=%s%s owner=root group=root mode=0755' % (script_file, AnsibleTmpPath, TmpFileName))
             self.run(host_list, 'shell', 'chmod 0755 %s%s' % (AnsibleTmpPath, TmpFileName))
             self.run(host_list, 'shell', 'cd %s && ./%s %s' % (AnsibleTmpPath, TmpFileName, script_args))
