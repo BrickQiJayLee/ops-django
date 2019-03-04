@@ -50,7 +50,7 @@ class ResultCallback(CallbackBase):
         c = config.config('mysql.ini')
         db_name = c.getOption(RUN_MODE, 'dbname')
         with mysql_db.conn_db(db_name, RUN_MODE) if RUN_MODE == 'DEPLOY' else mysql_db.conn_db(db_name,
-                                                                                                       "LOCAL") as _db:
+                                                                                               "LOCAL") as _db:
             data = [(
                 json.dumps(self.ret),
                 self.history_id
@@ -67,10 +67,16 @@ class ResultCallback(CallbackBase):
         self.ret['host_unreachable'][result._host.name] = result._result
 
     def v2_runner_on_ok(self, result, *args, **kwargs):
-        self.host_ok[result._host.get_name()] = result
-        if not self.history_id is None:
-            self.update_result()
-        self.ret['host_ok'][result._host.name] = result._result
+        if result._result.get('stderr_lines', None):
+            self.host_ok[result._host.get_name()] = result
+            if not self.history_id is None:
+                self.update_result()
+            self.ret['host_failed'][result._host.name] = result._result
+        else:
+            self.host_ok[result._host.get_name()] = result
+            if not self.history_id is None:
+                self.update_result()
+            self.ret['host_ok'][result._host.name] = result._result
 
     def v2_runner_on_failed(self, result, *args, **kwargs):
         self.host_failed[result._host.get_name()] = result
