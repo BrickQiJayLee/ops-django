@@ -23,7 +23,7 @@ class OpsJobScriptHistory(models.Model):
     id = models.AutoField(primary_key=True)
     job_name = models.CharField(max_length=32)  # job name
     result = models.TextField(default='')  # result
-    dtEventTime = models.DateTimeField(db_column='dtEventTime', blank=True, null=True, auto_now=True)  # dtEventTime
+    dtEventTime = models.DateTimeField(db_column='dtEventTime', blank=True, null=True, auto_now=True, db_index=True)  # dtEventTime
     exec_status = models.IntegerField(blank=True, null=True, default=0)  #0 exec success, 1 execing
     ip_list = models.TextField(default='')  #ip_list
 

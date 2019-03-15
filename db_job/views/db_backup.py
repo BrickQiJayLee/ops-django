@@ -15,6 +15,17 @@ from operator import itemgetter
 
 _logger = logging.getLogger(__name__)
 
+import commands
+
+def my_cmd(cmdStr):
+    status, out = commands.getstatusoutput(cmdStr.encode('utf-8'))
+    if status != 0:
+        print type(out)
+        print out
+        return 1
+    else:
+        return out
+
 def datefield_to_str(date_data):
     '''
     mysql date格式转换为字符串格式
@@ -43,9 +54,8 @@ def backup_excute_page(request):
     db_instances = {}
     for i in all_db_resource:
         db_instances[i['db_mark']] = i
-    #db_info = [ i for i in all_db_resource]
-    db_marks = [ i['db_mark'] for i in all_db_resource]
-    #print db_marks
+    db_marks = [i['db_mark'] for i in all_db_resource]
+
     return HttpResponse(json.dumps({"result": "success", "data": {"db_info": db_instances, "db_marks": db_marks}}))
 
 
@@ -73,7 +83,7 @@ def db_backup_job(job_list, db_ip_port):
         if job_list['db'] is None or job_list['table'] is None:
             return json.dumps({"result": "failed", "info": "%s db or table is none" % db_ip_port})
         else:
-            print job_list
+            # print job_list
             db_instance_id = job_list['db_instance_id']
             db_instance_name = job_list['db_mark']
             db_container_name = job_list['db_container_name_slave'] if job_list['db_container_name_slave'] else\
@@ -85,33 +95,50 @@ def db_backup_job(job_list, db_ip_port):
             table = job_list['table']
             ansible_interface = ansible_api.AnsiInterface(become=True, become_method='sudo', become_user='root')
             time_now = time.strftime("%Y%m%d%H%M%S", time.localtime(time.time()))
-            # mk backup dir
-            ansible_interface.make_dir(db_ip, '/data/mysqlbackup/ state=directory')
-            ansible_interface.make_dir(db_ip, '/data/mysqlbackup/%s state=directory' % db_instance_name)
-            ansible_interface.make_dir(db_ip, '/data/mysqlbackup/%s/%s_%s state=directory' % (db_instance_name, db, table))
 
             if db_service_type == 'container':
-                cmd = "docker exec %s  bash -c 'mysqldump -h127.0.0.1 " \
+                # mk backup dir
+                ansible_interface.make_dir(db_ip, '/data/mysqlbackup/ state=directory')
+                ansible_interface.make_dir(db_ip, '/data/mysqlbackup/%s state=directory' % db_instance_name)
+                ansible_interface.make_dir(db_ip,
+                                           '/data/mysqlbackup/%s/%s_%s state=directory' % (db_instance_name, db, table))
+                cmd = "docker exec %s  bash -c 'mysqldump --defaults-extra-file=/etc/my.cnf -h127.0.0.1 " \
                       "-u%s -P%s -p%s --opt --skip-lock-tables %s %s' > /data/mysqlbackup/%s/%s_%s/%s.sql" \
                       % (db_container_name, db_user_name, db_port, db_passwd, db, table, db_instance_name,
                          db, table, time_now)
-            elif db_service_type == 'service':
-                cmd = "mysqldump -h127.0.0.1 " \
+                result = ansible_interface.exec_shell(db_ip, cmd)
+            elif db_service_type in ['service', 'RDS']:
+                # mk backup dir
+                my_cmd('if [[ ! -d /data/mysqlbackup/ ]];then mkdir /data/mysqlbackup/; fi')
+                my_cmd('if [[ ! -d /data/mysqlbackup/%s ]];then mkdir /data/mysqlbackup/%s; fi' % (db_instance_name, db_instance_name))
+                my_cmd('if [[ ! -d /data/mysqlbackup/%s/%s_%s ]];then mkdir /data/mysqlbackup/%s/%s_%s; fi' % (db_instance_name, db, table, db_instance_name, db, table))
+                cmd = "mysqldump -h%s " \
                       "-u%s -P%s -p%s --opt --skip-lock-tables %s %s > /data/mysqlbackup/%s/%s_%s/%s.sql" \
-                      % (db_user_name, db_port, db_passwd, db, table, db_instance_name,
+                      % (db_ip, db_user_name, db_port, db_passwd, db, table, db_instance_name,
                          db, table, time_now)
+                _result = my_cmd(cmd)
+                result = {
+                    "host_failed": {},
+                    "host_ok": {},
+                    "host_unreachable": {}
+                }
+                if _result == 1:
+                    result['host_failed'] = {
+                        db_ip: {
+                            'stderr': u'备份失败'
+                        }
+                    }
+                else:
+                    result['host_ok'] = {db_ip: {}}
             else:
-                return json.dumps({"result": "failed","info": u"没有该服务类型对应命令"})
-
-            # do backup
-            result = ansible_interface.exec_shell(db_ip, cmd)
+                return json.dumps({"result": "failed", "info": u"没有该服务类型对应命令"})
 
             # parse result
             if result['host_failed']:
                 _ret = {"result": "failed", "info": "ip: %s, db: %s, failed_info: %s" % (db_ip, db, result['host_failed'][db_ip]['stderr'])}  # 执行结果放入Queue
             elif result['host_unreachable']:
                 _ret = {"result": "failed", "info": " ip: %s, ureachable: %s" % (db_ip, result['host_unreachable'])}  # 执行结果放入Queue
-            else:
+            elif result['host_ok']:
                 ok_ip = result['host_ok'].keys()
                 _ret = {"result": "success", "info": "ip: %s, backup_file: %s" % (','.join(ok_ip), "/data/mysqlbackup/%s/%s_%s/%s.sql" % (db_instance_name,
                          db, table, time_now))}
@@ -125,10 +152,13 @@ def db_backup_job(job_list, db_ip_port):
                 )]
                 c = config.config('mysql.ini')
                 db_name = c.getOption(RUN_MODE, 'dbname')
-                with mysql_db.conn_dbpool(db_name, RUN_MODE) as _db:
+                with mysql_db.conn_db(db_name, RUN_MODE) as _db:
                     sql = "insert into db_job_db_backup_history (`dtEventTime`,`db_instance_id`,`dbs`,`tables`,`result`) values (%s,%s,%s,%s,%s)"
                     _db.executemany(sql, data)
                 return json.dumps(_ret)
+            else:
+                _ret = {"result": "failed",
+                        "info": "ip: %s, db: %s, failed_info: %s" % (db_ip, db, u"没有执行结果，请检查密码")}
             return json.dumps(_ret)
     except Exception:
         try:

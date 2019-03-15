@@ -4,8 +4,9 @@ import sys
 sys.path.append("..")
 from classes import config
 import MySQLdb
-from DBUtils.PooledDB import PooledDB
+# from DBUtils.PooledDB import PooledDB
 import logging
+import traceback
 
 
 logger = logging.getLogger(__name__)
@@ -41,26 +42,22 @@ def change_query_data_tostring(query_data):
     return query_data
 
 
-class conn_dbpool:
+class conn_db:
     __pool = {}
     def __init__(self, db, config_section):
         """
         数据库构造函数，从连接池中取出连接，并生成操作游标
         """
         try:
-            self.db = db
-            if db not in conn_dbpool.__pool:
-                c = config.config("../conf/mysql.ini")
-                user = c.getOption(config_section, "username")
-                pwd = c.getOption(config_section, "password")
-                host = c.getOption(config_section, "host")
-                port = c.getOption(config_section, "port", "int")
-                conn_dbpool.__pool[db] = PooledDB(creator=MySQLdb, mincached=1, maxcached=20,
-                                                            host=host, port=port, user=user, passwd=pwd,
-                                                            db=db, use_unicode=False, charset="utf8")
-            self.connect = conn_dbpool.__pool[db].connection()
+            c = config.config("../conf/mysql.ini")
+            user = c.getOption(config_section, "username")
+            pwd = c.getOption(config_section, "password")
+            host = c.getOption(config_section, "host")
+            port = c.getOption(config_section, "port", "int")
+            self.connect = self.db = MySQLdb.connect(host=host, user=user, passwd=pwd, db=db, port=port, charset='utf8')
         except Exception, e:
-            logger.error("connect database error - %s" % str(e))
+            print traceback.format_exc()
+            #logger.error("connect database error - %s" % str(e))
             return
 
     def execute(self, sql, param=()):
@@ -71,7 +68,9 @@ class conn_dbpool:
             cursor1.close()
             return index
         except Exception, e:
-            logger.error("execute sql error - %s" % str(e))
+            print traceback.format_exc()
+            self.connect.rollback()
+            #logger.error("execute sql error - %s" % str(e))
             return -1
 
     def execute_returnid(self, sql, param=()):
@@ -83,7 +82,9 @@ class conn_dbpool:
             return index
         except Exception, e:
             self.connect.rollback()
-            logger.error("execute sql error - %s" % str(e))
+            print traceback.format_exc()
+            self.connect.rollback()
+            #logger.error("execute sql error - %s" % str(e))
             return -1
 
     def executemany(self, sql, param=()):
@@ -94,7 +95,9 @@ class conn_dbpool:
             cursor1.close()
             return index
         except Exception, e:
-            logger.error("execute sql error - %s" % str(e))
+            print traceback.format_exc()
+            self.connect.rollback()
+            #logger.error("execute sql error - %s" % str(e))
             return -1
 
     def select(self, sql, param=()):
@@ -106,7 +109,8 @@ class conn_dbpool:
             cursor1.close()
             return get_data
         except Exception, e:
-            logger.error("execute sql error - %s" % str(e))
+            print traceback.format_exc()
+            #logger.error("execute sql error - %s" % str(e))
             return -1
 
     def close(self):

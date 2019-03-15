@@ -3,20 +3,17 @@
 # Create your views here.
 
 from django.http import HttpResponse
-from django.shortcuts import render_to_response
 from django.views.decorators.csrf import csrf_exempt
-from django.contrib.auth.decorators import login_required
-from django.db import transaction
-from django.db.models import Q
 from classes import crypto
 from cmdb.views.tree import get_prod_id_by_name
 from cmdb.models import CmdbProductInfo
 from db_job.models import DbJobDbInstance
-import json, time, logging, traceback
+import json
+import logging
+import traceback
 
 
 _logger = logging.getLogger(__name__)
-
 
 
 ################数据库实例注册################
@@ -91,7 +88,6 @@ def commit_db_instance(request):
     '''
     db_id = request.POST.get("id", -1)
     pass_change = request.POST.get("pass_change", 0)
-    #print pass_change
     db_info = {
         "db_master": request.POST.get("db_master"),
         "db_slave": request.POST.get('db_slave', None),
@@ -104,12 +100,12 @@ def commit_db_instance(request):
         "db_user_name": request.POST.get("db_user_name"),
         "db_service_type": request.POST.get("db_service_type"),
         "db_service_name": request.POST.get("db_service_name"),
-        "db_service_name_slave": request.POST.get("db_service_name_slave")
+        "db_service_name_slave": request.POST.get("db_service_name_slave"),
     }
     if int(pass_change) == 1:
         db_info["db_passwd"] = crypto.passwd_aes(request.POST.get("db_passwd"))
     db_instance = DbJobDbInstance.objects.filter(db_mark=db_info['db_mark']).values()
-    if db_instance:
+    if db_instance and db_id in [None, '', '-1', '0', -1, 0]:
         return HttpResponse(json.dumps({"result": "failed", "info": "实例名重复"}))
     if db_id in [None, '', '-1', '0', -1, 0]:
         try:
@@ -151,6 +147,10 @@ def db_registry(request):
             {
                 'value': 'service',
                 'lable': 'service'
+            },
+            {
+                'value': 'RDS',
+                'lable': 'RDS'
             }
         ],
     }
