@@ -342,6 +342,14 @@ class AnsiInterface(AnsibleApi):
         result = self._get_result()
         return result
 
+    def local_actions(self, keyargs):
+        """
+        同步远程主机authkey
+        """
+        self.run([], 'local_action', keyargs)
+        result = self._get_result()
+        return result
+
     class ansible_script_temp_file():
         def __init__(self, script_name):
             '''

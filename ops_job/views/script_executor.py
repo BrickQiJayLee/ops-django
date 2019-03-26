@@ -14,11 +14,11 @@ import logging
 _logger = logging.getLogger(__name__)
 
 
-def get_history_id(script_job_name):
+def get_history_id(task_name):
     '''
     创建任务并获得history_id'''
     _history = OpsJobScriptHistory()
-    _history.job_name = script_job_name
+    _history.job_name = task_name
     _history.result = json.dumps({})
     _history.exec_status = 1
     _history.save()
@@ -31,8 +31,8 @@ def exector_create(request):
     创建任务记录
     :return:
     '''
-    script_job_name = request.POST.get("script_job_name")
-    _history_id = get_history_id(script_job_name)
+    task_name = request.POST.get("task_name")
+    _history_id = get_history_id(task_name)
     return HttpResponse(json.dumps({"result": "success", "data": {"history_id": _history_id}}))
 
 def exec_scripts(kwargs):
@@ -43,14 +43,17 @@ def exec_scripts(kwargs):
     try:
         args_type = kwargs.get("args_type", None)
         script_name = kwargs.get("script_name", None)
+        job_name = kwargs.get("job_name", None)
         history_id = kwargs.get("history_id", None)
         if history_id is None:
             return {'result': 'failed', 'info': u'请先创建任务'}
-        if script_name is None:
-            job_name = kwargs.get("script_job_name", None)
+        if script_name is None or script_name == '':
+            job_name = kwargs.get("job_name", None)
             script_name = get_script_name(job_name)
-        else:
+        elif job_name is None or job_name == '':
             job_name = get_job_name(script_name)
+        else:
+            pass
         if script_name is None and job_name is None:
             _logger.error('%s script %s"' % (script_name, u"传入名称参数错误"))
         script_args = kwargs.get("script_args", '')
@@ -64,7 +67,7 @@ def exec_scripts(kwargs):
             ips = get_ips_by_set_module(module_args)
             ips = ips + specific_ip
         else:
-            return {'result': 'failed', 'info':u'未指定ip'}
+            return {'result': 'failed', 'info': u'未指定ip'}
         if args_type == 'normal':
             script_args_req = script_args
         elif args_type == 'file':
@@ -109,14 +112,15 @@ def get_args(request):
             return HttpResponse(json.dumps({"result": "failed", "info": "未获取到ip列表"}))
         return HttpResponse(json.dumps({"result": "success", "data": args}))
     except Exception:
-        print traceback.format_exc()
+        _logger.error(traceback.format_exc())
         return HttpResponse(json.dumps({"result": "failed", "info": "获取参数有误"}))
 
 @csrf_exempt
-def scrpits_http(request):
+def script_http(request):
     try:
         kwargs = json.loads(request.POST.get("kwargs", None))
         ret = exec_scripts(kwargs)
         return HttpResponse(json.dumps(ret))
     except Exception:
         _logger.error(traceback.format_exc())
+        print traceback.format_exc()

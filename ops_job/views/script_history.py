@@ -2,7 +2,7 @@
 from __future__ import unicode_literals
 from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
-import json, os, time, logging
+import json, logging
 import traceback
 from djcelery.models import PeriodicTask, CrontabSchedule
 #from django.db import transaction
@@ -17,10 +17,10 @@ _logger = logging.getLogger(__name__)
 def get_script_history(request):
     startTime = request.POST.get('startTime', None)
     endTime = request.POST.get('endTime', None)
-    print startTime, endTime
+    # print startTime, endTime
     if not endTime or not startTime:
         return HttpResponse(json.dumps({"result": "failed", "info": "请指定时间"}))
-    script_history = OpsJobScriptHistory.objects.filter(dtEventTime__gte=startTime,dtEventTime__lte=endTime).values()
+    script_history = OpsJobScriptHistory.objects.filter(dtEventTime__gte=startTime, dtEventTime__lte=endTime).values()
     if not script_history:
         return HttpResponse(json.dumps({"result": "success", "data": []}))
     data = list()
@@ -43,9 +43,11 @@ def get_script_history(request):
         host_unreachable_list = _result.get('host_unreachable', {})
         host_unreachable_ip_count = len(host_unreachable_list)
         for i in [host_ok_list, host_failed_list, host_unreachable_list]:
-            for k,v in dict(i).items():
-                if v.has_key('stdout'): del v['stdout']
-                if v.has_key('stderr'): v['stderr'] = v['stderr'].split('\n')
+            for k, v in dict(i).items():
+                if v.has_key('stdout'):
+                    del v['stdout']
+                if v.has_key('stderr'):
+                    v['stderr'] = v['stderr'].split('\n')
         detail = {
             "成功IP:": host_ok_list,
             "失败IP:": host_failed_list,
@@ -78,8 +80,8 @@ def script_history_detail(request):
         script_history = OpsJobScriptHistory.objects.filter(id=history_id).first()
         if not script_history:
             return HttpResponse(json.dumps({"result": "failed", "data": "未查到执行历史记录"}))
-        job_name = script_history.job_name
-        dteventtime = script_history.dtEventTime
+        #job_name = script_history.job_name
+        #dteventtime = script_history.dtEventTime
         ip_list = script_history.ip_list
         ip_list = '[]' if ip_list == '' else ip_list
         exec_status = script_history.exec_status
@@ -111,5 +113,5 @@ def script_history_detail(request):
         print traceback.format_exc()
         return HttpResponse(json.dumps({
             "result": "failed",
-            "data": {"ExecComplete":True, "info": "查询失败，已停止"}
+            "data": {"ExecComplete": True, "info": "查询失败，已停止"}
         }))
